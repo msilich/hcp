@@ -1,0 +1,79 @@
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: hcp-apps-ingress-public-ip
+  namespace: metallb
+spec:
+  addresses:
+  - 172.16.3.6-172.16.3.7
+  autoAssign: false
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: hcp-apps-ingress-l2
+  namespace: metallb
+spec:
+  interfaces:
+  - br-ex
+  ipAddressPools:
+  - hcp-apps-ingress-public-ip
+---
+apiVersion: operator.openshift.io/v1
+kind: IngressController
+metadata:
+  name: vlan12
+  namespace: openshift-ingress-operator
+spec:
+  domain: apps.hcp.lost-aurora.de
+  endpointPublishingStrategy:
+    type: NodePortService
+  replicas: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: router-vlan12-public
+  namespace: openshift-ingress
+  annotations:
+    metallb.io/address-pool: hcp-apps-ingress-public-ip
+spec:
+  allocateLoadBalancerNodePorts: false
+  externalTrafficPolicy: Cluster
+  loadBalancerIP: 172.16.3.6
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+    targetPort: http
+  - name: https
+    protocol: TCP
+    port: 443
+    targetPort: https
+  selector:
+    ingresscontroller.operator.openshift.io/deployment-ingresscontroller: vlan12
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: router-default-vlan12
+  namespace: openshift-ingress
+  annotations:
+    metallb.io/address-pool: hcp-apps-ingress-public-ip
+spec:
+  allocateLoadBalancerNodePorts: false
+  externalTrafficPolicy: Cluster
+  loadBalancerIP: 172.16.3.7
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+    targetPort: 80
+  - name: https
+    protocol: TCP
+    port: 443
+    targetPort: 443
+  selector:
+    ingresscontroller.operator.openshift.io/deployment-ingresscontroller: default
+  type: LoadBalancer

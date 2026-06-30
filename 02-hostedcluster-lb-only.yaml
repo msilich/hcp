@@ -1,0 +1,100 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: clusters-lab-hcp
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: clusters-lab-hcp-lab-hcp
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: lab-hcp
+  namespace: clusters-lab-hcp
+spec:
+  autoscaling: {}
+  capabilities: {}
+  configuration: {}
+  controllerAvailabilityPolicy: SingleReplica
+  dns:
+    baseDomain: hcp.lost-aurora.de
+  etcd:
+    managed:
+      storage:
+        persistentVolume:
+          size: 8Gi
+          storageClassName: lvms-vg1
+        type: PersistentVolume
+    managementType: Managed
+  fips: false
+  imageContentSources:
+  - source: quay.io
+    mirrors:
+    - harbor.lost-aurora.de:18443/cache-quay-io
+  - source: registry.redhat.io
+    mirrors:
+    - harbor.lost-aurora.de:18443/cache-registry-redhat-io
+  - source: registry.connect.redhat.com
+    mirrors:
+    - harbor.lost-aurora.de:18443/cache-registry-connect-redhat-com
+  - source: docker.io
+    mirrors:
+    - harbor.lost-aurora.de:18443/cache-docker-io
+  - source: ghcr.io
+    mirrors:
+    - harbor.lost-aurora.de:18443/cache-ghcr-io
+  - source: gcr.io
+    mirrors:
+    - harbor.lost-aurora.de:18443/cache-gcr-io
+  - source: registry.k8s.io
+    mirrors:
+    - harbor.lost-aurora.de:18443/cache-registry-k8s-io
+  infraID: lab-hcp
+  infrastructureAvailabilityPolicy: SingleReplica
+  kubeAPIServerDNSName: api.hcp.lost-aurora.de
+  networking:
+    clusterNetwork:
+    - cidr: 10.132.0.0/14
+    machineNetwork:
+    - cidr: 172.16.3.0/24
+    networkType: OVNKubernetes
+    serviceNetwork:
+    - cidr: 172.31.0.0/16
+  olmCatalogPlacement: management
+  platform:
+    kubevirt:
+      baseDomainPassthrough: true
+    type: KubeVirt
+  pullSecret:
+    name: lab-hcp-pull-secret
+  release:
+    image: quay.io/openshift-release-dev/ocp-release@sha256:27c93d3b308e9c3694dd7e448d71f61e4e3c033ad8905031736bd1912c1f41fc
+  secretEncryption:
+    aescbc:
+      activeKey:
+        name: lab-hcp-etcd-encryption-key
+    type: aescbc
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      loadBalancer:
+        hostname: api.hcp.lost-aurora.de
+      type: LoadBalancer
+  - service: OAuthServer
+    servicePublishingStrategy:
+      route:
+        hostname: oauth-openshift.apps.hcp.lost-aurora.de
+      type: Route
+  - service: Ignition
+    servicePublishingStrategy:
+      route:
+        hostname: ignition.apps.hcp.lost-aurora.de
+      type: Route
+  - service: Konnectivity
+    servicePublishingStrategy:
+      loadBalancer:
+        hostname: konnectivity.apps.hcp.lost-aurora.de
+      type: LoadBalancer
+  sshKey: {}

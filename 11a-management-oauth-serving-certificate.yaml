@@ -1,0 +1,12 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: lab-hcp-oauth-serving-certificate
+  namespace: clusters-lab-hcp
+spec:
+  secretName: lab-hcp-oauth-serving-certificate-tls
+  dnsNames:
+  - oauth-openshift.apps.hcp.lost-aurora.de
+  issuerRef:
+    kind: ClusterIssuer
+    name: letsencrypt-cloudflare

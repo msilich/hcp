@@ -1,0 +1,9 @@
+apiVersion: operator.openshift.io/v1
+kind: Console
+metadata:
+  name: cluster
+spec:
+  route:
+    hostname: console-openshift-console.apps.hcp.lost-aurora.de
+    secret:
+      name: console-openshift-console-apps-hcp-lost-aurora-de-tls

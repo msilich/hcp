@@ -1,0 +1,26 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: api-shift-lost-aurora-de
+  namespace: openshift-config
+spec:
+  secretName: api-shift-lost-aurora-de-tls
+  issuerRef:
+    kind: ClusterIssuer
+    name: letsencrypt-cloudflare
+  dnsNames:
+  - api.shift.lost-aurora.de
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: apps-shift-lost-aurora-de
+  namespace: openshift-ingress
+spec:
+  secretName: apps-shift-lost-aurora-de-tls
+  issuerRef:
+    kind: ClusterIssuer
+    name: letsencrypt-cloudflare
+  dnsNames:
+  - "*.apps.shift.lost-aurora.de"
+  - apps.shift.lost-aurora.de

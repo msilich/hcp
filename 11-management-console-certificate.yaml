@@ -1,0 +1,12 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: console-openshift-console-apps-hcp-lost-aurora-de
+  namespace: clusters-lab-hcp
+spec:
+  secretName: console-openshift-console-apps-hcp-lost-aurora-de-tls
+  dnsNames:
+  - console-openshift-console.apps.hcp.lost-aurora.de
+  issuerRef:
+    kind: ClusterIssuer
+    name: letsencrypt-cloudflare
