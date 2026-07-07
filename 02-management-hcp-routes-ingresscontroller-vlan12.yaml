@@ -13,5 +13,5 @@ spec:
   nodePlacement:
     nodeSelector:
       matchLabels:
-        kubernetes.io/hostname: shiftnode1
+        kubernetes.io/hostname: shiftnode2
   replicas: 1

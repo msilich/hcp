@@ -32,10 +32,6 @@ spec:
         address:
         - ip: 172.16.3.17
           prefix-length: 24
-        - ip: 172.16.3.3
-          prefix-length: 32
-        - ip: 172.16.3.4
-          prefix-length: 32
       ipv6:
         enabled: false
     routes:
@@ -74,10 +70,6 @@ spec:
         address:
         - ip: 172.16.3.18
           prefix-length: 24
-        - ip: 172.16.3.2
-          prefix-length: 32
-        - ip: 172.16.3.5
-          prefix-length: 32
       ipv6:
         enabled: false
       bridge:

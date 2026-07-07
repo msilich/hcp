@@ -55,7 +55,7 @@ The `172.16.3.0/24 -> 172.16.1.0/24` block is expected to catch test traffic suc
 | Guest default wildcard for HCP-created router health | `*.apps.lab-hcp.hcp.lost-aurora.de` | `172.16.3.7` | `80/443` |
 | Worker VMs | NodePool `workers` | DHCP from `172.16.3.0/24` | generated KubeVirt/Machine node names |
 
-For access from the Default network (`172.16.1.0/24`) through the UniFi gateway, UniFi needs a static route for `172.16.3.0/24` via the OPNsense Default-network address, and OPNsense needs SNAT on VLAN12 for Default-network clients reaching the HCP VIPs. In this lab that SNAT covers `172.16.3.2/31`, `172.16.3.4/31`, and `172.16.3.6/31`, so API, OAuth, Ignition, Konnectivity, and guest ingress replies return through OPNsense.
+For access from the Default network (`172.16.1.0/24`) through the UniFi gateway, UniFi needs a static route for `172.16.3.0/24` via the OPNsense Default-network address. OPNsense should route Default-to-HCP traffic without SNAT, so firewall logs still show the real client address. The HCP VLAN node uses policy routing and `rp_filter=0` for the HCP bridge path so replies from `172.16.3.0/24` return through OPNsense.
 
 ## LoadBalancer IPs and DNS
 
@@ -64,7 +64,9 @@ The `HostedCluster` API supports `servicePublishingStrategy.type: LoadBalancer`,
 This setup does not run a service-patching enforcer. Instead:
 
 - `01-management-metallb-vlan12.yaml` makes the HCP MetalLB pool `172.16.3.2-172.16.3.5` eligible for automatic allocation.
-- `00-management-vlan12-network.yaml` owns those management-side VIPs as `/32` addresses on `br-hcp`: `172.16.3.3` and `172.16.3.4` on `shiftnode1`, `172.16.3.2` and `172.16.3.5` on `shiftnode2`.
+- `01-management-metallb-vlan12.yaml` advertises those management-side VIPs with MetalLB Layer2 on `br-hcp` from `shiftnode2`.
+- `01a-management-hcp-vlan12-node-tuning.yaml` disables strict reverse-path filtering for the HCP VLAN bridge path on `shiftnode2`.
+- `00-management-vlan12-network.yaml` only gives each management node its real VLAN12 bridge IP (`172.16.3.17/24` on `shiftnode1`, `172.16.3.18/24` on `shiftnode2`). The service VIPs are not manually bound as host `/32` addresses.
 - The HCP-generated `kube-apiserver` and `konnectivity-server` Services carry `external-dns.alpha.kubernetes.io/hostname` annotations from their HostedCluster service publishing config.
 - `04-external-dns-cloudflare.yaml` runs ExternalDNS against the `lost-aurora.de` Cloudflare zone, only the `clusters-lab-hcp-lab-hcp` namespace, and only the two HCP LoadBalancer hostnames, then keeps Cloudflare A records in sync with the currently assigned LoadBalancer IPs. It uses `registry=noop` because these records already exist and the instance is tightly scoped by namespace, annotation, and regex filters.
 
@@ -72,7 +74,7 @@ NodePorts on those HCP-generated LoadBalancer Services are acceptable in this la
 
 API and Konnectivity use `servicePublishingStrategy.type: LoadBalancer`. OAuth and Ignition must stay `Route` in this Hypershift release: the controller rejects OAuth with `invalid publishing strategy for OAuth service: LoadBalancer` and Ignition with `unknown service strategy type for ignition service: LoadBalancer`.
 
-`02-management-hcp-routes-ingresscontroller-vlan12.yaml` creates a dedicated management-cluster `hcp-routes` IngressController. It only watches the HCP control-plane namespace `clusters-lab-hcp-lab-hcp` and is placed on the node that owns the HCP route VIPs. `02a-management-router-oauth-vlan12.yaml` and `02b-management-router-ignition-vlan12.yaml` then expose that dedicated router on `172.16.3.3` and `172.16.3.4`.
+`02-management-hcp-routes-ingresscontroller-vlan12.yaml` creates a dedicated management-cluster `hcp-routes` IngressController. It only watches the HCP control-plane namespace `clusters-lab-hcp-lab-hcp` and runs on `shiftnode2`, the node that advertises the management-side HCP VIPs on VLAN12. `02a-management-router-oauth-vlan12.yaml` and `02b-management-router-ignition-vlan12.yaml` then expose that dedicated router on `172.16.3.3` and `172.16.3.4` through MetalLB Layer2.
 
 For customer environments with fully separated networks, this is the important bit: the helper Services must select `ingresscontroller.operator.openshift.io/deployment-ingresscontroller: hcp-routes`, not `default`. The `hcp-routes` router pods must run on nodes that have a real interface in the HCP/tenant network, for example `bond1.225`, and the route VIPs must be advertised or bound on that same network.
 
@@ -103,6 +105,7 @@ cd /Users/Michael.Silich/git/hcp
 oc apply -f manifests/hcp-lab-hcp-metallb-only/00-management-vlan12-network.yaml
 oc apply -f manifests/hcp-lab-hcp-metallb-only/00a-management-ovn-routing-via-host.yaml
 oc apply -f manifests/hcp-lab-hcp-metallb-only/01-management-metallb-vlan12.yaml
+oc apply -f manifests/hcp-lab-hcp-metallb-only/01a-management-hcp-vlan12-node-tuning.yaml
 oc apply -f manifests/harbor-mirror-sets/00-harbor-proxy-cache-mirror-sets.yaml
 oc apply -f manifests/hcp-lab-hcp-metallb-only/02-management-hcp-routes-ingresscontroller-vlan12.yaml
 oc apply -f manifests/hcp-lab-hcp-metallb-only/02a-management-router-oauth-vlan12.yaml

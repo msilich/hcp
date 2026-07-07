@@ -1,0 +1,22 @@
+apiVersion: tuned.openshift.io/v1
+kind: Tuned
+metadata:
+  name: hcp-vlan12-routing
+  namespace: openshift-cluster-node-tuning-operator
+spec:
+  profile:
+  - name: hcp-vlan12-routing
+    data: |
+      [main]
+      summary=Allow routed HCP VLAN12 VIP traffic to return through br-hcp
+
+      [sysctl]
+      net.ipv4.conf.all.rp_filter=0
+      net.ipv4.conf.default.rp_filter=0
+      net.ipv4.conf.br-hcp.rp_filter=0
+  recommend:
+  - profile: hcp-vlan12-routing
+    priority: 20
+    match:
+    - label: kubernetes.io/hostname
+      value: shiftnode2
