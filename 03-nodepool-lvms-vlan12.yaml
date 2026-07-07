@@ -1,14 +1,14 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: lab-hcp-nodeip-eno2-vlan12
+  name: hcp1-nodeip-eno2-vlan12
   namespace: clusters-lab-hcp
 data:
   config: |
     apiVersion: machineconfiguration.openshift.io/v1
     kind: MachineConfig
     metadata:
-      name: 99-worker-nodeip-eno2-vlan12
+      name: 99-worker-hcp1-nodeip-eno2-vlan12
       labels:
         machineconfiguration.openshift.io/role: worker
     spec:
@@ -26,6 +26,11 @@ data:
             - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINuWpHNr8iUdNiicOl3ZJc5xwos78C0RPieaH7+fgJ3f Michael.Silich@mbmsilich-1.local
         storage:
           files:
+          - path: /etc/hostname
+            mode: 420
+            overwrite: true
+            contents:
+              source: data:text/plain;charset=utf-8;base64,aGNwMQo=
           - path: /etc/NetworkManager/system-connections/enp1s0.nmconnection
             mode: 384
             overwrite: true
@@ -40,13 +45,13 @@ data:
 apiVersion: hypershift.openshift.io/v1beta1
 kind: NodePool
 metadata:
-  name: lab-hcp
+  name: hcp1
   namespace: clusters-lab-hcp
 spec:
   arch: amd64
   clusterName: lab-hcp
   config:
-  - name: lab-hcp-nodeip-eno2-vlan12
+  - name: hcp1-nodeip-eno2-vlan12
   management:
     autoRepair: false
     replace:

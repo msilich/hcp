@@ -15,7 +15,7 @@ It intentionally does not use the previous management-node `socat`/`nft` VIP pro
 | Default network | `172.16.1.0/24`; must stay available independently of the HCP lab |
 | Management cluster kubeconfig | `/Users/Michael.Silich/git/hcp/kubeconfig-noingress-letsencrypt` |
 | Hosted cluster kubeconfig | Extract from `clusters-lab-hcp/lab-hcp-admin-kubeconfig` |
-| Hosted worker | `lab-hcp` node pool replica 1, static guest IP `172.16.3.20` |
+| Hosted worker | NodePool `hcp1`, node name `hcp1`, static guest IP `172.16.3.20` |
 
 OPNsense is the gateway, DHCP/DNS point, and firewall boundary for VLAN12. HCP traffic from `172.16.3.0/24` to the normal/default network is blocked by default and logged, with only explicit exceptions listed below.
 
@@ -53,7 +53,7 @@ The `172.16.3.0/24 -> 172.16.1.0/24` block is expected to catch test traffic suc
 | Konnectivity | `konnectivity.apps.hcp.lost-aurora.de` | `172.16.3.5` | `8091` |
 | Guest apps wildcard | `*.apps.hcp.lost-aurora.de` | `172.16.3.6` | `80/443` |
 | Guest default wildcard for HCP-created router health | `*.apps.lab-hcp.hcp.lost-aurora.de` | `172.16.3.7` | `80/443` |
-| Worker VM | `lab-hcp` node pool replica 1 | `172.16.3.20` | static guest IP |
+| Worker VM | NodePool `hcp1`, node name `hcp1` | `172.16.3.20` | static guest IP |
 
 For access from the Default network (`172.16.1.0/24`) through the UniFi gateway, UniFi needs a static route for `172.16.3.0/24` via the OPNsense Default-network address, and OPNsense needs SNAT on VLAN12 for Default-network clients reaching the HCP VIPs. In this lab that SNAT covers `172.16.3.2/31`, `172.16.3.4/31`, and `172.16.3.6/31`, so API, OAuth, Ignition, Konnectivity, and guest ingress replies return through OPNsense.
 
@@ -121,6 +121,17 @@ oc apply -f manifests/hcp-lab-hcp-metallb-only/03-nodepool-lvms-vlan12.yaml
 ```
 
 The order intentionally applies the dedicated HCP route router, route helper LoadBalancers, HostedCluster, and ExternalDNS before the node pool. That way, DNS can follow the HCP API and Konnectivity LoadBalancer IPs before worker VMs need API or Konnectivity. OAuth and Ignition are reachable through the fixed `router-hcp-oauth-vlan12` and `router-hcp-ignition-vlan12` LoadBalancers.
+
+The node pool manifest writes `/etc/hostname` so the hosted worker registers as `hcp1` instead of the generated KubeVirt VM name. Because the KubeVirt Machine name is still generated, patch the hosted-cluster Node provider ID after the VM exists and the node has registered:
+
+```bash
+export MANAGEMENT_KUBECONFIG=/Users/Michael.Silich/git/hcp/kubeconfig-noingress-letsencrypt
+oc --kubeconfig "${MANAGEMENT_KUBECONFIG}" -n clusters-lab-hcp-lab-hcp get machine -o custom-columns='NAME:.metadata.name,PROVIDERID:.spec.providerID'
+
+export GUEST_KUBECONFIG=/tmp/lab-hcp-admin.kubeconfig
+oc --kubeconfig "${GUEST_KUBECONFIG}" patch node hcp1 --type=merge -p '{"spec":{"providerID":"kubevirt://<generated-machine-name>"}}'
+oc --kubeconfig "${GUEST_KUBECONFIG}" adm taint node hcp1 node.cloudprovider.kubernetes.io/uninitialized:NoSchedule- || true
+```
 
 Management-node forwarding is handled by `ipForwarding: Global` in `00a-management-ovn-routing-via-host.yaml`, so no MachineConfig is required for `net.ipv4.ip_forward`.
 
@@ -209,7 +220,9 @@ curl https://console-openshift-console.apps.hcp.lost-aurora.de
 
 Expected current results:
 
-- hosted worker is `Ready` on `172.16.3.20`
+- hosted worker `hcp1` is `Ready` on `172.16.3.20`
+- NodePool `hcp1` has `CURRENT NODES=1`
+- Machine `hcp1-...` has `NODENAME=hcp1`
 - `kube-apiserver` is `LoadBalancer` on `api.hcp.lost-aurora.de:6443`
 - `hcp-routes` is `Available=True` with selector `ingresscontroller.operator.openshift.io/deployment-ingresscontroller=hcp-routes`
 - `router-hcp-oauth-vlan12` is `LoadBalancer` on `172.16.3.3:443` and selects `hcp-routes`
