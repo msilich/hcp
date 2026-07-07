@@ -1,62 +1,16 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: hcp1-nodeip-eno2-vlan12
-  namespace: clusters-lab-hcp
-data:
-  config: |
-    apiVersion: machineconfiguration.openshift.io/v1
-    kind: MachineConfig
-    metadata:
-      name: 99-worker-hcp1-nodeip-eno2-vlan12
-      labels:
-        machineconfiguration.openshift.io/role: worker
-    spec:
-      config:
-        ignition:
-          version: 3.5.0
-        systemd:
-          units:
-          - name: crio.service
-            enabled: true
-        passwd:
-          users:
-          - name: core
-            sshAuthorizedKeys:
-            - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINuWpHNr8iUdNiicOl3ZJc5xwos78C0RPieaH7+fgJ3f Michael.Silich@mbmsilich-1.local
-        storage:
-          files:
-          - path: /etc/hostname
-            mode: 420
-            overwrite: true
-            contents:
-              source: data:text/plain;charset=utf-8;base64,aGNwMQo=
-          - path: /etc/NetworkManager/system-connections/enp1s0.nmconnection
-            mode: 384
-            overwrite: true
-            contents:
-              source: data:text/plain;charset=utf-8;base64,W2Nvbm5lY3Rpb25dCmlkPWVucDFzMAp0eXBlPWV0aGVybmV0CmludGVyZmFjZS1uYW1lPWVucDFzMAphdXRvY29ubmVjdD10cnVlCgpbZXRoZXJuZXRdCgpbaXB2NF0KbWV0aG9kPW1hbnVhbAphZGRyZXNzZXM9MTcyLjE2LjMuMjAvMjQKZ2F0ZXdheT0xNzIuMTYuMy4xCmRucz0xNzIuMTYuMy4xOzEuMS4xLjE7CnJvdXRlLW1ldHJpYz0xMDAKCltpcHY2XQptZXRob2Q9ZGlzYWJsZWQK
-          - path: /etc/default/nodeip-configuration
-            mode: 420
-            overwrite: true
-            contents:
-              source: data:text/plain;charset=utf-8;base64,Tk9ERUlQX0hJTlQ9MTcyLjE2LjMuMjAKS1VCRUxFVF9OT0RFSVBfSElOVD0xNzIuMTYuMy4yMAo=
----
 apiVersion: hypershift.openshift.io/v1beta1
 kind: NodePool
 metadata:
-  name: hcp1
+  name: workers
   namespace: clusters-lab-hcp
 spec:
   arch: amd64
   clusterName: lab-hcp
-  config:
-  - name: hcp1-nodeip-eno2-vlan12
   management:
     autoRepair: false
     replace:
       rollingUpdate:
-        maxSurge: 0
+        maxSurge: 1
         maxUnavailable: 1
       strategy: RollingUpdate
     upgradeType: Replace
@@ -80,4 +34,4 @@ spec:
     type: KubeVirt
   release:
     image: quay.io/openshift-release-dev/ocp-release@sha256:27c93d3b308e9c3694dd7e448d71f61e4e3c033ad8905031736bd1912c1f41fc
-  replicas: 1
+  replicas: 2
