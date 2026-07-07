@@ -2,7 +2,7 @@
 
 All records are DNS-only A records in the `lost-aurora.de` zone.
 
-`api.hcp.lost-aurora.de` and `konnectivity.apps.hcp.lost-aurora.de` are managed by ExternalDNS in the management cluster. The ExternalDNS instance is limited to the `clusters-lab-hcp-lab-hcp` namespace and these two exact names; it uses `registry=noop` to adopt the existing Cloudflare A records without TXT ownership records. The other records are intentionally kept static for now.
+`api.hcp.lost-aurora.de` and `konnectivity.apps.hcp.lost-aurora.de` are managed by ExternalDNS in the management cluster. The ExternalDNS instance is limited to the `clusters-lab-hcp-lab-hcp` namespace and these two exact names; it uses `registry=noop` to adopt the existing Cloudflare A records without TXT ownership records. OAuth, Ignition, and guest apps records are intentionally kept static for now.
 
 | Name | Address | Purpose |
 | --- | --- | --- |

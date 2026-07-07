@@ -11,7 +11,7 @@ spec:
   allocateLoadBalancerNodePorts: false
   externalTrafficPolicy: Local
   selector:
-    ingresscontroller.operator.openshift.io/deployment-ingresscontroller: default
+    ingresscontroller.operator.openshift.io/deployment-ingresscontroller: hcp-routes
   ports:
   - name: https
     protocol: TCP

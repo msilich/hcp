@@ -1,0 +1,17 @@
+apiVersion: operator.openshift.io/v1
+kind: IngressController
+metadata:
+  name: hcp-routes
+  namespace: openshift-ingress-operator
+spec:
+  domain: apps.hcp.lost-aurora.de
+  endpointPublishingStrategy:
+    type: Private
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: clusters-lab-hcp-lab-hcp
+  nodePlacement:
+    nodeSelector:
+      matchLabels:
+        kubernetes.io/hostname: shiftnode1
+  replicas: 1

@@ -13,9 +13,9 @@ It intentionally does not use the previous management-node `socat`/`nft` VIP pro
 | OPNsense spare port | `igb1`, UniFi 48-port switch port 23, disabled/no IP |
 | HCP VLAN | VLAN ID `12`, network `172.16.3.0/24`, gateway/DNS `172.16.3.1` |
 | Default network | `172.16.1.0/24`; must stay available independently of the HCP lab |
-| Management cluster kubeconfig | `/Users/Michael.Silich/git/hcp/kubeconfig-noingress-8` |
-| Hosted cluster kubeconfig | Extract from `clusters-lab-hcp/lab-hcp-admin-kubeconfig`, current working copy commonly kept at `/tmp/lab-hcp-admin-current/kubeconfig` |
-| Hosted worker | `lab-hcp-sckp7-t5gwl`, `172.16.3.20`, currently single replica |
+| Management cluster kubeconfig | `/Users/Michael.Silich/git/hcp/kubeconfig-noingress-letsencrypt` |
+| Hosted cluster kubeconfig | Extract from `clusters-lab-hcp/lab-hcp-admin-kubeconfig` |
+| Hosted worker | `lab-hcp` node pool replica 1, static guest IP `172.16.3.20` |
 
 OPNsense is the gateway, DHCP/DNS point, and firewall boundary for VLAN12. HCP traffic from `172.16.3.0/24` to the normal/default network is blocked by default and logged, with only explicit exceptions listed below.
 
@@ -48,8 +48,8 @@ The `172.16.3.0/24 -> 172.16.1.0/24` block is expected to catch test traffic suc
 | Service | DNS name | VLAN12 IP | Port |
 | --- | --- | --- | --- |
 | Kubernetes API | `api.hcp.lost-aurora.de` | `172.16.3.2` | `6443` |
-| OAuth Route via management router | `oauth-openshift.apps.hcp.lost-aurora.de` | `172.16.3.3` | `443` |
-| Ignition Route via management router | `ignition.apps.hcp.lost-aurora.de` | `172.16.3.4` | `443` |
+| OAuth Route via dedicated HCP router | `oauth-openshift.apps.hcp.lost-aurora.de` | `172.16.3.3` | `443` |
+| Ignition Route via dedicated HCP router | `ignition.apps.hcp.lost-aurora.de` | `172.16.3.4` | `443` |
 | Konnectivity | `konnectivity.apps.hcp.lost-aurora.de` | `172.16.3.5` | `8091` |
 | Guest apps wildcard | `*.apps.hcp.lost-aurora.de` | `172.16.3.6` | `80/443` |
 | Guest default wildcard for HCP-created router health | `*.apps.lab-hcp.hcp.lost-aurora.de` | `172.16.3.7` | `80/443` |
@@ -64,12 +64,19 @@ The `HostedCluster` API supports `servicePublishingStrategy.type: LoadBalancer`,
 This setup does not run a service-patching enforcer. Instead:
 
 - `01-management-metallb-vlan12.yaml` makes the HCP MetalLB pool `172.16.3.2-172.16.3.5` eligible for automatic allocation.
+- `00-management-vlan12-network.yaml` owns those management-side VIPs as `/32` addresses on `br-hcp`: `172.16.3.3` and `172.16.3.4` on `shiftnode1`, `172.16.3.2` and `172.16.3.5` on `shiftnode2`.
 - The HCP-generated `kube-apiserver` and `konnectivity-server` Services carry `external-dns.alpha.kubernetes.io/hostname` annotations from their HostedCluster service publishing config.
-- `04-external-dns-cloudflare.yaml` runs ExternalDNS against the `lost-aurora.de` Cloudflare zone, only the `clusters-lab-hcp-lab-hcp` namespace, and only the two HCP hostnames, then keeps Cloudflare A records in sync with the currently assigned LoadBalancer IPs. It uses `registry=noop` because these records already exist and the instance is tightly scoped by namespace, annotation, and regex filters.
+- `04-external-dns-cloudflare.yaml` runs ExternalDNS against the `lost-aurora.de` Cloudflare zone, only the `clusters-lab-hcp-lab-hcp` namespace, and only the two HCP LoadBalancer hostnames, then keeps Cloudflare A records in sync with the currently assigned LoadBalancer IPs. It uses `registry=noop` because these records already exist and the instance is tightly scoped by namespace, annotation, and regex filters.
 
 NodePorts on those HCP-generated LoadBalancer Services are acceptable in this lab because OPNsense is the enforced boundary. Default-network access from VLAN12 remains blocked and logged by the firewall.
 
-`OAuthServer` and `Ignition` are different: the Hypershift operator in this release does not accept `LoadBalancer` for those publishing strategies. The HostedCluster therefore uses `Route` for `oauth-openshift.apps.hcp.lost-aurora.de` and `ignition.apps.hcp.lost-aurora.de`, while `02a-management-router-oauth-vlan12.yaml` and `02b-management-router-ignition-vlan12.yaml` expose the management cluster router on `172.16.3.3` and `172.16.3.4` without NodePorts.
+API and Konnectivity use `servicePublishingStrategy.type: LoadBalancer`. OAuth and Ignition must stay `Route` in this Hypershift release: the controller rejects OAuth with `invalid publishing strategy for OAuth service: LoadBalancer` and Ignition with `unknown service strategy type for ignition service: LoadBalancer`.
+
+`02-management-hcp-routes-ingresscontroller-vlan12.yaml` creates a dedicated management-cluster `hcp-routes` IngressController. It only watches the HCP control-plane namespace `clusters-lab-hcp-lab-hcp` and is placed on the node that owns the HCP route VIPs. `02a-management-router-oauth-vlan12.yaml` and `02b-management-router-ignition-vlan12.yaml` then expose that dedicated router on `172.16.3.3` and `172.16.3.4`.
+
+For customer environments with fully separated networks, this is the important bit: the helper Services must select `ingresscontroller.operator.openshift.io/deployment-ingresscontroller: hcp-routes`, not `default`. The `hcp-routes` router pods must run on nodes that have a real interface in the HCP/tenant network, for example `bond1.225`, and the route VIPs must be advertised or bound on that same network.
+
+The HCP API endpoint is reachable at `https://api.hcp.lost-aurora.de:6443`, but Hypershift rejects using the APIServer LoadBalancer hostname in `spec.configuration.apiServer.servingCerts.namedCertificates`. Use the hosted-cluster kubeconfig, which carries the cluster CA, for `oc` access. Plain `curl` without that CA will report an unknown issuer; `curl -k https://api.hcp.lost-aurora.de:6443/readyz` should return `ok`.
 
 ## Image mirrors
 
@@ -90,13 +97,14 @@ The management cluster's global `ImageDigestMirrorSet` and `ImageTagMirrorSet` o
 Run all commands against the management cluster:
 
 ```bash
-export KUBECONFIG=/Users/Michael.Silich/git/hcp/kubeconfig-noingress-8
+export KUBECONFIG=/Users/Michael.Silich/git/hcp/kubeconfig-noingress-letsencrypt
 cd /Users/Michael.Silich/git/hcp
 
 oc apply -f manifests/hcp-lab-hcp-metallb-only/00-management-vlan12-network.yaml
 oc apply -f manifests/hcp-lab-hcp-metallb-only/00a-management-ovn-routing-via-host.yaml
 oc apply -f manifests/hcp-lab-hcp-metallb-only/01-management-metallb-vlan12.yaml
 oc apply -f manifests/harbor-mirror-sets/00-harbor-proxy-cache-mirror-sets.yaml
+oc apply -f manifests/hcp-lab-hcp-metallb-only/02-management-hcp-routes-ingresscontroller-vlan12.yaml
 oc apply -f manifests/hcp-lab-hcp-metallb-only/02a-management-router-oauth-vlan12.yaml
 oc apply -f manifests/hcp-lab-hcp-metallb-only/02b-management-router-ignition-vlan12.yaml
 oc apply -f manifests/hcp-lab-hcp-metallb-only/02-hostedcluster-lb-only.yaml
@@ -112,7 +120,7 @@ oc apply -f manifests/hcp-lab-hcp-metallb-only/04-external-dns-cloudflare.yaml
 oc apply -f manifests/hcp-lab-hcp-metallb-only/03-nodepool-lvms-vlan12.yaml
 ```
 
-The order intentionally starts the OAuth/Ignition router LoadBalancers and ExternalDNS before the node pool. That way, DNS can follow the HCP API and Konnectivity LoadBalancer IPs before worker VMs need API or Konnectivity.
+The order intentionally applies the dedicated HCP route router, route helper LoadBalancers, HostedCluster, and ExternalDNS before the node pool. That way, DNS can follow the HCP API and Konnectivity LoadBalancer IPs before worker VMs need API or Konnectivity. OAuth and Ignition are reachable through the fixed `router-hcp-oauth-vlan12` and `router-hcp-ignition-vlan12` LoadBalancers.
 
 Management-node forwarding is handled by `ipForwarding: Global` in `00a-management-ovn-routing-via-host.yaml`, so no MachineConfig is required for `net.ipv4.ip_forward`.
 
@@ -140,7 +148,7 @@ hcp create cluster kubevirt \
   --render > lab-hcp-rendered.yaml
 ```
 
-After rendering, keep the `HostedCluster` service list from `02-hostedcluster-lb-only.yaml` and the router LoadBalancers from `02a-management-router-oauth-vlan12.yaml` and `02b-management-router-ignition-vlan12.yaml`, not the default Route/NodePort mix from the CLI.
+After rendering, keep the `HostedCluster` service list from `02-hostedcluster-lb-only.yaml`, not the default Route/NodePort mix from the CLI.
 
 ## Verification
 
@@ -151,9 +159,9 @@ After rendering, keep the `HostedCluster` service list from `02-hostedcluster-lb
 Expected result:
 
 - HCP API and Konnectivity Services are `type: LoadBalancer`.
-- OAuth and Ignition reach the management router through `router-hcp-oauth-vlan12` and `router-hcp-ignition-vlan12`.
 - API and Konnectivity have Cloudflare-managed DNS records through ExternalDNS.
-- OAuth/Ignition remain fixed at `172.16.3.3` and `172.16.3.4`.
+- `hcp-routes` is `Available=True`.
+- OAuth and Ignition reach the dedicated HCP router through `router-hcp-oauth-vlan12` and `router-hcp-ignition-vlan12`.
 
 After the worker node is `Ready`, apply the guest-cluster ingress pieces against the hosted cluster:
 
@@ -161,6 +169,7 @@ After the worker node is `Ready`, apply the guest-cluster ingress pieces against
 oc -n clusters-lab-hcp get secret lab-hcp-admin-kubeconfig -o jsonpath='{.data.kubeconfig}' | base64 -d > /tmp/lab-hcp-admin.kubeconfig
 
 oc --kubeconfig /tmp/lab-hcp-admin.kubeconfig --server=https://api.hcp.lost-aurora.de:6443 --insecure-skip-tls-verify=true apply -f manifests/hcp-lab-hcp-metallb-only/07-guest-metallb-operator.yaml
+oc --kubeconfig /tmp/lab-hcp-admin.kubeconfig --server=https://api.hcp.lost-aurora.de:6443 --insecure-skip-tls-verify=true wait -n metallb --for=jsonpath='{.status.phase}'=Succeeded csv -l operators.coreos.com/metallb-operator.metallb --timeout=10m
 oc --kubeconfig /tmp/lab-hcp-admin.kubeconfig --server=https://api.hcp.lost-aurora.de:6443 --insecure-skip-tls-verify=true apply -f manifests/hcp-lab-hcp-metallb-only/08-guest-metallb-instance.yaml
 oc --kubeconfig /tmp/lab-hcp-admin.kubeconfig --server=https://api.hcp.lost-aurora.de:6443 --insecure-skip-tls-verify=true apply -f manifests/hcp-lab-hcp-metallb-only/09-guest-apps-ingress-vlan12.yaml
 oc apply -f manifests/hcp-lab-hcp-metallb-only/11-management-console-certificate.yaml
@@ -172,7 +181,7 @@ oc -n clusters-lab-hcp patch hostedcluster lab-hcp --type=merge -p '{"spec":{"co
 
 The additional `vlan12` ingress controller uses the supported `NodePortService` strategy, while the user-managed `router-vlan12-public` Service publishes `apps.hcp.lost-aurora.de` through MetalLB IP `172.16.3.6` without LoadBalancer NodePorts. The default HCP-created ingress controller remains managed by Hypershift and keeps its immutable `NodePortService` strategy, but `router-default-vlan12` also exposes it on `172.16.3.7` so its canary checks remain healthy. Public console and app traffic should use `router-vlan12-public`.
 
-In the management control-plane namespace, KubeVirt may create tenant service mirror objects with generated names for guest `LoadBalancer` Services. The live guest Services `router-vlan12-public` and `router-default-vlan12` are the authoritative objects for `172.16.3.6` and `172.16.3.7`; the `05-verify-loadbalancer-dns.sh` check intentionally focuses on the HCP control-plane LoadBalancers, ExternalDNS, and the management-router OAuth/Ignition LoadBalancers.
+In the management control-plane namespace, KubeVirt may create tenant service mirror objects with generated names for guest `LoadBalancer` Services. The live guest Services `router-vlan12-public` and `router-default-vlan12` are the authoritative objects for `172.16.3.6` and `172.16.3.7`; the `05-verify-loadbalancer-dns.sh` check intentionally focuses on the HCP control-plane LoadBalancers, the OAuth/Ignition router helpers, and ExternalDNS.
 
 ## Quick live checks
 
@@ -182,6 +191,7 @@ Management side:
 export KUBECONFIG=/Users/Michael.Silich/git/hcp/kubeconfig-noingress-letsencrypt
 
 oc -n clusters-lab-hcp-lab-hcp get svc kube-apiserver konnectivity-server
+oc -n openshift-ingress-operator get ingresscontroller hcp-routes
 oc -n openshift-ingress get svc router-hcp-oauth-vlan12 router-hcp-ignition-vlan12
 ./manifests/hcp-lab-hcp-metallb-only/05-verify-loadbalancer-dns.sh
 ```
@@ -192,15 +202,22 @@ Hosted side:
 oc --kubeconfig /tmp/lab-hcp-admin-current/kubeconfig get nodes -o wide
 oc --kubeconfig /tmp/lab-hcp-admin-current/kubeconfig -n openshift-ingress get svc router-vlan12-public router-default-vlan12
 oc --kubeconfig /tmp/lab-hcp-admin-current/kubeconfig -n open-cluster-management-agent-addon get deploy governance-policy-framework klusterlet-addon-workmgr managed-serviceaccount-addon-agent
+curl -k https://api.hcp.lost-aurora.de:6443/readyz
+curl https://oauth-openshift.apps.hcp.lost-aurora.de
+curl https://console-openshift-console.apps.hcp.lost-aurora.de
 ```
 
 Expected current results:
 
-- hosted worker `lab-hcp-sckp7-t5gwl` is `Ready` on `172.16.3.20`
-- `kube-apiserver` is `LoadBalancer` on `172.16.3.2:6443`
-- `konnectivity-server` is `LoadBalancer` on `172.16.3.5:8091`
-- `router-hcp-oauth-vlan12` is `LoadBalancer` on `172.16.3.3:443`
-- `router-hcp-ignition-vlan12` is `LoadBalancer` on `172.16.3.4:443`
+- hosted worker is `Ready` on `172.16.3.20`
+- `kube-apiserver` is `LoadBalancer` on `api.hcp.lost-aurora.de:6443`
+- `hcp-routes` is `Available=True` with selector `ingresscontroller.operator.openshift.io/deployment-ingresscontroller=hcp-routes`
+- `router-hcp-oauth-vlan12` is `LoadBalancer` on `172.16.3.3:443` and selects `hcp-routes`
+- `router-hcp-ignition-vlan12` is `LoadBalancer` on `172.16.3.4:443` and selects `hcp-routes`
+- `konnectivity-server` is `LoadBalancer` on `konnectivity.apps.hcp.lost-aurora.de:8091`
 - `router-vlan12-public` is `LoadBalancer` on `172.16.3.6:80/443`
 - `router-default-vlan12` is `LoadBalancer` on `172.16.3.7:80/443`
+- `curl -k https://api.hcp.lost-aurora.de:6443/readyz` returns `ok`
+- `curl https://oauth-openshift.apps.hcp.lost-aurora.de` reaches `172.16.3.3` with a trusted certificate and returns HTTP `403` for anonymous `/`
+- `curl https://console-openshift-console.apps.hcp.lost-aurora.de` reaches `172.16.3.6` with a trusted certificate and returns the OpenShift console HTML
 - ACM add-ons that need the hub API are `1/1`, including `governance-policy-framework`

@@ -23,7 +23,7 @@ data:
           users:
           - name: core
             sshAuthorizedKeys:
-            - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOOUJIpTJVWAFxgof2M6tzVW0L5rsfTld9WsmnTVZ3IA lab-hcp-debug
+            - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINuWpHNr8iUdNiicOl3ZJc5xwos78C0RPieaH7+fgJ3f Michael.Silich@mbmsilich-1.local
         storage:
           files:
           - path: /etc/NetworkManager/system-connections/enp1s0.nmconnection
